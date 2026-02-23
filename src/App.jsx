@@ -327,11 +327,18 @@ export default function JapanApp() {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+      });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
+      }
       setCameraActive(true); setPhotoTaken(null); setCameraResult(null);
-    } catch { alert("Camera access denied."); }
+    } catch (err) {
+      alert(`Camera error: ${err.name} — ${err.message}`);
+    }
   };
 
   const stopCamera = () => { streamRef.current?.getTracks().forEach(t => t.stop()); setCameraActive(false); };
