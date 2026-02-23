@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#f5f5f5"/>
+  <circle cx="96" cy="96" r="44" fill="#E8474C"/>
+  <text x="256" y="340" text-anchor="middle" font-size="248" font-family="serif" fill="#202020">日</text>
+</svg>
