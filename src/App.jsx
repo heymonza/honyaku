@@ -198,7 +198,6 @@ export default function JapanApp() {
   const [transcript, setTranscript] = useState("");
   const [translation, setTranslation] = useState(null);
   const [translating, setTranslating] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
   const [photoTaken, setPhotoTaken] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [cameraResult, setCameraResult] = useState(null);
@@ -209,9 +208,7 @@ export default function JapanApp() {
   const [resultView, setResultView] = useState(false);
   const [resultData, setResultData] = useState(null);
   const recognitionRef = useRef(null);
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const micButtonRef = useRef(null);
   const startRecordingRef = useRef(null);
   const stopRecordingRef = useRef(null);
@@ -325,36 +322,25 @@ export default function JapanApp() {
     setTextTranslating(false);
   };
 
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
-      setCameraActive(true); setPhotoTaken(null); setCameraResult(null);
-    } catch (err) {
-      alert(`Camera error: ${err.name} — ${err.message}`);
-    }
-  };
-
-  const stopCamera = () => { streamRef.current?.getTracks().forEach(t => t.stop()); setCameraActive(false); };
-
-  const takePhoto = () => {
-    const v = videoRef.current, c = canvasRef.current;
-    if (!v || !c) return;
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext("2d").drawImage(v, 0, 0);
-    const url = c.toDataURL("image/jpeg", 0.8);
-    setPhotoTaken(url); stopCamera(); analyzePhoto(url);
+  const handleCameraFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so the same file can be re-selected (RETAKE)
+    e.target.value = "";
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const dataUrl = evt.target.result;
+      setPhotoTaken(dataUrl);
+      setCameraResult(null);
+      analyzePhoto(dataUrl);
+    };
+    reader.readAsDataURL(file);
   };
 
   const analyzePhoto = async (dataUrl) => {
     setAnalyzing(true); setCameraResult(null);
     try {
+        const mediaType = dataUrl.split(";")[0].split(":")[1] || "image/jpeg";
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -362,7 +348,7 @@ export default function JapanApp() {
           model: "claude-sonnet-4-5", max_tokens: 1000,
           system: `Return ONLY JSON: {"found_text": string|null, "translation": string, "context": string}. No markdown.`,
           messages: [{ role: "user", content: [
-            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: dataUrl.split(",")[1] } },
+            { type: "image", source: { type: "base64", media_type: mediaType, data: dataUrl.split(",")[1] } },
             { type: "text", text: "Translate any Japanese text you see." }
           ]}]
         }),
@@ -540,8 +526,19 @@ export default function JapanApp() {
           {tab === "camera" && (
             <div>
               <p style={{ ...label, marginBottom: 20, lineHeight: 1.7 }}>Point at Japanese signs or menus for an instant translation.</p>
-              {!cameraActive && !photoTaken && (
-                <div onClick={startCamera} style={{ ...card, flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40, border: "1px dashed rgba(32,32,32,0.15)", cursor: "pointer" }}>
+
+              {/* Hidden native camera input — opens the real camera app on mobile */}
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                onChange={handleCameraFile}
+              />
+
+              {!photoTaken && (
+                <div onClick={() => cameraInputRef.current?.click()} style={{ ...card, flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40, border: "1px dashed rgba(32,32,32,0.15)", cursor: "pointer" }}>
                   <svg width="36" height="32" viewBox="0 0 36 32" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M34.3636 1.6V0H1.63636V1.6H0V30.4H1.63636V32H34.3636V30.4H36V1.6H34.3636ZM3.27273 3.2H13.0909V4.8H3.27273V3.2ZM26.1818 24H24.5455V27.2H21.2727V28.8H14.7273V27.2H11.4545V24H9.81818V17.6H11.4545V14.4H14.7273V12.8H21.2727V14.4H24.5455V17.6H26.1818V24ZM32.7273 9.6H3.27273V8H13.0909V6.4H14.7273V4.8H16.3636V3.2H32.7273V9.6Z" fill="black"/>
                     <path d="M22.9091 17.6V24H21.2727V25.6H14.7273V24H13.0909V17.6H14.7273V22.4H16.3636V19.2H19.6364V17.6H14.7273V16H21.2727V17.6H22.9091Z" fill="black"/>
@@ -549,21 +546,14 @@ export default function JapanApp() {
                   <span style={{ ...label, letterSpacing: 1 }}>TAP TO OPEN CAMERA</span>
                 </div>
               )}
-              {cameraActive && (
-                <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(32,32,32,0.06)" }}>
-                  <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", display: "block" }} />
-                  <div style={{ display: "flex", gap: 10, padding: 12, background: "#fff" }}>
-                    <button onClick={takePhoto} style={{ flex: 1, padding: 14, background: "#202020", border: "none", borderRadius: 6, color: "#f5f5f5", fontFamily: "'Space Mono'", fontSize: 12, letterSpacing: 1, cursor: "pointer" }}>📸 CAPTURE</button>
-                    <button onClick={stopCamera} style={{ padding: "14px 18px", background: "transparent", border: "1px solid rgba(32,32,32,0.1)", borderRadius: 6, color: "rgba(32,32,32,0.5)", fontFamily: "'Space Mono'", fontSize: 11, cursor: "pointer" }}>CANCEL</button>
-                  </div>
-                </div>
-              )}
+
               {photoTaken && (
                 <div style={{ marginBottom: 12 }}>
                   <img src={photoTaken} alt="Captured" style={{ width: "100%", borderRadius: 8, display: "block", border: "1px solid rgba(32,32,32,0.06)" }} />
-                  <button onClick={() => { setPhotoTaken(null); setCameraResult(null); startCamera(); }} style={{ marginTop: 8, width: "100%", padding: 12, background: "#fff", border: "1px solid rgba(32,32,32,0.06)", borderRadius: 8, fontFamily: "'Space Mono'", fontSize: 11, color: "rgba(32,32,32,0.5)", cursor: "pointer", letterSpacing: 1 }}>RETAKE</button>
+                  <button onClick={() => { setPhotoTaken(null); setCameraResult(null); cameraInputRef.current?.click(); }} style={{ marginTop: 8, width: "100%", padding: 12, background: "#fff", border: "1px solid rgba(32,32,32,0.06)", borderRadius: 8, fontFamily: "'Space Mono'", fontSize: 11, color: "rgba(32,32,32,0.5)", cursor: "pointer", letterSpacing: 1 }}>RETAKE</button>
                 </div>
               )}
+
               {analyzing && <div style={{ textAlign: "center", padding: 24, ...label, letterSpacing: 2 }}>ANALYZING...</div>}
               {cameraResult && !analyzing && (
                 <div style={{ ...card, flexDirection: "column", gap: 10 }}>
@@ -573,7 +563,6 @@ export default function JapanApp() {
                   {cameraResult.context && <span style={{ ...label, lineHeight: 1.7 }}>💡 {cameraResult.context}</span>}
                 </div>
               )}
-              <canvas ref={canvasRef} style={{ display: "none" }} />
             </div>
           )}
 
